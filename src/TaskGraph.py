@@ -54,26 +54,65 @@ class TaskEdge(Generic[T]):
   Contains a handler that runs code
   during the transition, and defines
   its start and end states
+
+  :params startStates: A list of start states that
+    items can be in to trigger this edge
+  :params endStates: A list of end states that
+    items may be transferred to. It is up to the
+    callable to determine which state to transfer
+    to
+  :params errorEndStates: A list of end states that
+    items may be transferred to if an error occurs. These
+    are not added to the graph to prevent the planner
+    from trying to use these, but are used internally
+    to enforce a valid response if an error condition
+    is met
   """
-  def __init__(self, startState : str, endState : str, runner : Callable[ [T], str]):
-    self.__startState = startState
-    self.__endState = endState
+  def __init__(self, startStates : List[str], endStates : List[str], errorEndStates : List[str], runner : Callable[ [T], str], id : Optional[str] = None):
+    self.__startStates = startStates
+    self.__endStates = endStates
+    self.__errorEndStates = errorEndStates
     self.__runner = runner
+
+    self.__id : str = id if id is not None else uuid.uuid4().hex
+
+    # A set for valid outputs
+    self.__validOutputs : Set[str] = set( self.__endStates + self.__errorEndStates )
   
-  # Getters for both states
+  # Getters for states
   @property
-  def startState(self) -> str:
-    return self.__startState
+  def startStates(self) -> List[str]:
+    return self.__startStates
   
   @property
-  def endState(self) -> str:
-    return self.__endState
+  def endStates(self) -> List[str]:
+    return self.__endStates
+
+  @property
+  def errorEndStates(self) -> List[str]:
+    return self.__errorEndStates
+
+  # Getters for the id and runner
+  @property
+  def runner(self) -> Callable[ [T], str]:
+    return self.__runner
+
+  @property
+  def id(self) -> str:
+    return self.__id
 
   def __call__(self, o : T) -> str:
     """
-    Calls the internal runner.
+    Calls the internal runner,
+    and verifies we exit into a valid
+    state.
     """
-    return self.__runner(o)
+    outState = self.__runner(o)
+
+    if outState not in self.__validOutputs:
+      raise ValueError(f"Invalid output state {outState}!")
+    else:
+      return outState
 
 class TaskGraph(Generic[T]):
   """
@@ -115,13 +154,20 @@ class TaskGraph(Generic[T]):
     Adds an edge to the graph
     """
     # Check if the states are valid
-    if taskEdge.startState not in self.__states:
-      raise ValueError(f"Start state {taskEdge.startState} is not a valid state!")
-    if taskEdge.endState not in self.__states:
-      raise ValueError(f"End state {taskEdge.endState} is not a valid state!")
+    for state in taskEdge.startStates + taskEdge.endStates + taskEdge.errorEndStates:
+      if state not in self.__states:
+        raise ValueError(f"State {state} is not in the graph!")
     
-    # Add the edge
-    self.__graph.add_edge(taskEdge.startState, taskEdge.endState, edgeObj = taskEdge)
+    # Add the edge, as a node
+    self.__graph.add_node(taskEdge.id, edgeObj = taskEdge)
+
+    # Add all edges to the node that aren't error edges
+    for startState in taskEdge.startStates:
+      self.__graph.add_edge(startState, taskEdge.id)
+    
+    # Add all end states to the node
+    for endState in taskEdge.endStates:
+      self.__graph.add_edge(taskEdge.id, endState)
   
   def addEdges(self, taskEdges : List[TaskEdge[T]]):
     """
@@ -191,7 +237,7 @@ class TaskGraph(Generic[T]):
       # edge's callable, is not what we
       # expect, a deviation has occurred.
       # In this case, re-compute path and re-run
-      idx = 0
+      idx = 1
       
       # We go till len(path) - 1 since the last
       # state, which is the terminal state, is
@@ -201,7 +247,7 @@ class TaskGraph(Generic[T]):
       # change the destination to where you actually
       # want to go
       while idx < len(path) - 1:
-        nextState = self.__graph [path[idx]][path[idx+1]]["edgeObj"] (item)
+        nextState = self.__graph.nodes[path[idx]]["edgeObj"] (item)
 
         # Set the item's curr state
         item.currState = nextState
@@ -209,11 +255,11 @@ class TaskGraph(Generic[T]):
         if nextState == path[idx + 1]:
           # In this branch, the transition was
           # as planned
-          idx += 1
+          idx += 2
         else:
           # Transition went differently, re-run djkstra's, and
-          # set idx to 0
-          idx -= idx
+          # set idx to 1
+          idx -= idx + 1
 
           path.clear()
           path = path + list(nx.shortest_path( self.__graph, startState, endState ))
@@ -232,20 +278,20 @@ taskGraph.addStates( ["empty", "add", "print", "done"] )
 def emptyEdgeHandler(x : Number) -> str:
   return "add"
 
-emptyEdge : TaskEdge[Number] = TaskEdge( "empty", "add", emptyEdgeHandler)
+emptyEdge : TaskEdge[Number] = TaskEdge( ["empty"], ["add"], [], emptyEdgeHandler)
 
 def addEdgeHandler(x : Number) -> str:
   x.val += 1
   return "print"
 
-addEdge : TaskEdge[Number] = TaskEdge( "add", "print", addEdgeHandler)
+addEdge : TaskEdge[Number] = TaskEdge( ["add"], ["print"], [], addEdgeHandler)
 
 def printEdgeHandler(x : Number) -> str:
   print(x.val)
   print("Done!")
   return "done"
 
-printEdge : TaskEdge[Number] = TaskEdge( "print", "done", printEdgeHandler)
+printEdge : TaskEdge[Number] = TaskEdge( ["print"], ["done"], [], printEdgeHandler)
 
 # Adding all edges to the graph
 taskGraph.addEdges( [emptyEdge, addEdge, printEdge] )
