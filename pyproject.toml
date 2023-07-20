@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "pythongraphrunner"
-version = "0.1.0"
-description = ""
+version = "1.0.0"
+description = "A micro-library that makes it easy to write code that runs as part of a state machine."
 authors = ["Adithya Yerramsetty <adithyay@hotmail.com>"]
 license = "MIT"
 readme = "README.md"
