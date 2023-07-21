@@ -1,5 +1,5 @@
 # Defines the utilities needed for a task graph
-from typing import Generic, TypeVar, Set, Callable, Optional, Dict, List
+from typing import Generic, TypeVar, Set, Callable, Optional, Dict, List, Tuple
 import uuid
 
 import networkx as nx
@@ -191,6 +191,22 @@ class TaskGraph(Generic[T]):
     # add it to the set if needed
     if item.isDiscrepant:
       self.__discrepantItems.add(item.id)
+    
+  def removeItem(self, itemID : str):
+    """
+    Removes an item from the graph
+    """
+    # Check if the item is in the graph
+    if itemID not in self.__items:
+      raise ValueError(f"Item with id {itemID} is not in the graph!")
+    
+    # Remove the item from the graph
+    self.__items.pop(itemID)
+
+    # Check if the item is discrepant, and
+    # remove it from the set if needed
+    if itemID in self.__discrepantItems:
+      self.__discrepantItems.remove(itemID)
   
   def getItemCurrState(self, itemID : str) -> str:
     return self.__items[itemID].currState
@@ -200,6 +216,12 @@ class TaskGraph(Generic[T]):
 
   def getItem(self, itemID : str) -> T:
     return self.__items[itemID]
+  
+  def getItemIDs(self) -> List[str]:
+    return list(self.__items.keys())
+  
+  def getItems(self) -> List[ Tuple[str, T] ]:
+    return list(self.__items.items())
   
   def updateItemStates(self, itemID : str, currState : str, desiredState : str):
     if itemID not in self.__items:
